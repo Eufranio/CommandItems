@@ -32,8 +32,8 @@ public class ItemsConfig {
         return this.items.entrySet().stream().filter(e -> e.getValue().equals(item)).findFirst().get().getKey();
     }
 
-    public void createEmptyItem() {
-        this.items.put(UUID.randomUUID().toString(), new CommandItem());
+    public void createItem(String name) {
+        this.items.put(name == null ? UUID.randomUUID().toString() : name, new CommandItem());
     }
 
 }

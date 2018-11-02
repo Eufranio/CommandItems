@@ -11,6 +11,7 @@ import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.event.item.inventory.InteractItemEvent;
 import org.spongepowered.api.item.ItemType;
 import org.spongepowered.api.item.ItemTypes;
+import org.spongepowered.api.item.inventory.query.QueryOperationTypes;
 import org.spongepowered.api.scheduler.Task;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.format.TextColors;
@@ -79,7 +80,7 @@ public class CommandItem {
             p.sendMessage(Text.of(TextColors.RED, CommandItems.getMessages().COOLDOWN.replace("%seconds%", ""+ -time)));
             return;
         }
-        if (consume) p.getInventory().query(event.getItemStack().createStack()).poll(1);
+        if (consume) p.getInventory().query(QueryOperationTypes.ITEM_STACK_IGNORE_QUANTITY.of(event.getItemStack().createStack())).poll(1);
         for (int i = 0; i < this.commands.size(); i++) {
             String[] cmd = this.commands.get(i + 1).split(";");
             CommandSource src = cmd[1].equals("console") ? Sponge.getServer().getConsole() : p;

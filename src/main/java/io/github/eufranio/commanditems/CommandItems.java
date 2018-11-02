@@ -67,17 +67,24 @@ public class CommandItems {
 
         logger.info("CommandItems is starting!");
 
-        CommandSpec newKey = CommandSpec.builder()
-                .permission("commanditems.newkey")
+        CommandSpec create = CommandSpec.builder()
+                .permission("commanditems.create")
+                .arguments(GenericArguments.optional(
+                        GenericArguments.string(Text.of("name"))
+                ))
                 .executor((sender, context) -> {
-                    getConfig().createEmptyItem();
+                    getConfig().createItem(context.<String>getOne("name").orElse(null));
                     itemsConfig.reload();
+                    sender.sendMessage(Text.of(TextColors.GREEN, "Successfully created new item!"));
                     return CommandResult.success();
                 }).build();
 
         CommandSpec give = CommandSpec.builder()
                 .permission("commanditems.give")
-                .arguments(GenericArguments.string(Text.of("uuid")), GenericArguments.optional(GenericArguments.player(Text.of("player"))))
+                .arguments(
+                        GenericArguments.string(Text.of("name")),
+                        GenericArguments.integer(Text.of("amount")),
+                        GenericArguments.optional(GenericArguments.player(Text.of("player"))))
                 .executor((sender, context) -> {
                     Player player = null;
                     if (context.<Player>getOne("player").isPresent()) {
@@ -87,13 +94,15 @@ public class CommandItems {
                     } else {
                         throw new CommandException(Text.of("You must specifiy a player when running this command from console!"));
                     }
-                    String uuid = context.<String>getOne("uuid").get();
+                    String uuid = context.<String>getOne("name").get();
                     CommandItem item = getConfig().getItemFor(uuid);
                     if (item != null) {
                         ItemStack stack = item.type.getTemplate().createStack();
                         stack.offer(Keys.DISPLAY_NAME, toText(item.name));
                         stack.offer(Keys.ITEM_LORE, item.lore.stream().map(CommandItems::toText).collect(Collectors.toList()));
                         stack = ItemStack.builder().fromContainer(stack.toContainer().set(DataQuery.of("UnsafeData", "CommandItem"), uuid)).build();
+
+                        stack.setQuantity(context.<Integer>getOne("amount").get());
                         player.getInventory().offer(stack);
                         player.sendMessage(toText(getMessages().YOU_GOT_A_ITEM.replace("%item%", TextSerializers.FORMATTING_CODE.serialize(toText(item.name)))));
                     }
@@ -105,19 +114,19 @@ public class CommandItems {
                 .executor((sender, context) -> {
                     sender.sendMessage(Text.of(
                             Text.NEW_LINE,
-                            TextColors.GREEN, "    /citems give <uuid> [player]",
+                            TextColors.GREEN, "    /citems give <name> [player]",
                             TextColors.GRAY, " > ",
                             TextColors.GRAY, "Gives yourself (or [player]) the item associated to this UUID, from the config",
                             Text.NEW_LINE,
-                            TextColors.GREEN, "    /citems newkey",
+                            TextColors.GREEN, "    /citems create [name]",
                             TextColors.GRAY, " > ",
-                            TextColors.GRAY, "Creates a new default item on the config (so you can edit it)",
+                            TextColors.GRAY, "Creates a new default item on the config with the specified name (so you can edit it)",
                             Text.NEW_LINE
                     ));
                     return CommandResult.success();
                 })
                 .child(give, "give")
-                .child(newKey, "newkey")
+                .child(create, "create")
                 .build();
 
         Sponge.getCommandManager().register(this, cmd, "commanditems", "citems", "ci");
@@ -140,10 +149,6 @@ public class CommandItems {
 
     public static Text toText(String s) {
         return TextSerializers.FORMATTING_CODE.deserialize(s);
-    }
-
-    public static void log(String text) {
-        instance.logger.warn(text);
     }
 
     public static CommandItems getInstance() {
