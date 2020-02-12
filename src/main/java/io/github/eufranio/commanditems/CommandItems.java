@@ -1,35 +1,46 @@
 package io.github.eufranio.commanditems;
 
 import com.google.inject.Inject;
-import io.github.eufranio.commanditems.config.*;
-import ninja.leaping.configurate.objectmapping.GuiceObjectMapperFactory;
+import io.github.eufranio.commanditems.api.Storage;
+import io.github.eufranio.commanditems.config.CommandItem;
+import io.github.eufranio.commanditems.config.Config;
+import io.github.eufranio.commanditems.config.MainConfig;
+import io.github.eufranio.commanditems.data.CommandItemData;
+import io.github.eufranio.commanditems.managers.ItemManager;
+import io.github.eufranio.commanditems.storage.DatabaseStorage;
+import io.github.eufranio.commanditems.storage.FileStorage;
 import org.slf4j.Logger;
 import org.spongepowered.api.Sponge;
 import org.spongepowered.api.command.CommandException;
 import org.spongepowered.api.command.CommandResult;
-import org.spongepowered.api.command.CommandSource;
 import org.spongepowered.api.command.args.GenericArguments;
 import org.spongepowered.api.command.spec.CommandSpec;
 import org.spongepowered.api.config.ConfigDir;
 import org.spongepowered.api.data.DataQuery;
+import org.spongepowered.api.data.DataRegistration;
+import org.spongepowered.api.data.key.Key;
 import org.spongepowered.api.data.key.Keys;
+import org.spongepowered.api.data.value.mutable.Value;
+import org.spongepowered.api.entity.Entity;
+import org.spongepowered.api.entity.EntityTypes;
 import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.event.Listener;
-import org.spongepowered.api.event.filter.Getter;
+import org.spongepowered.api.event.filter.cause.Root;
+import org.spongepowered.api.event.game.GameRegistryEvent;
 import org.spongepowered.api.event.game.GameReloadEvent;
+import org.spongepowered.api.event.game.state.GamePreInitializationEvent;
 import org.spongepowered.api.event.game.state.GameStartedServerEvent;
-import org.spongepowered.api.event.network.ClientConnectionEvent;
+import org.spongepowered.api.event.item.inventory.InteractItemEvent;
 import org.spongepowered.api.item.inventory.ItemStack;
+import org.spongepowered.api.item.inventory.query.QueryOperationTypes;
+import org.spongepowered.api.item.inventory.transaction.InventoryTransactionResult;
 import org.spongepowered.api.plugin.Plugin;
-import org.spongepowered.api.scheduler.Task;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.format.TextColors;
-import org.spongepowered.api.text.format.TextStyles;
 import org.spongepowered.api.text.serializer.TextSerializers;
+import org.spongepowered.api.util.TypeTokens;
 
 import java.io.File;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Plugin(
@@ -42,39 +53,38 @@ import java.util.stream.Collectors;
 )
 public class CommandItems {
 
-    private static CommandItems instance;
-
     @Inject
     public Logger logger;
-
-    @Inject
-    public GuiceObjectMapperFactory mapper;
 
     @Inject
     @ConfigDir(sharedRoot = false)
     public File configDir;
 
-    private ConfigManager<ItemsConfig> itemsConfig;
-    private ConfigManager<CooldownStorage> cooldowns;
-    private ConfigManager<MessagesConfig> messages;
+    public Config<MainConfig> config;
+    public Storage storage;
+    public ItemManager itemManager = new ItemManager(this);
+
+    public static Key<Value<String>> KEY;
 
     @Listener
     public void onServerStart(GameStartedServerEvent event) {
-        instance = this;
-        itemsConfig = ConfigManager.of(ItemsConfig.class, configDir, "CommandItems.conf", mapper, false, this);
-        cooldowns = ConfigManager.of(CooldownStorage.class, configDir, "Cooldowns.conf", mapper, true, this);
-        messages = ConfigManager.of(MessagesConfig.class, configDir, "Messages.conf", mapper, false, this);
+        this.config = new Config<>(MainConfig.class, "CommandItems.conf", configDir);
+
+        if (config.get().enableDatabaseStorage)
+            storage = new DatabaseStorage();
+        else
+            storage = new FileStorage();
+        storage.init(this);
 
         logger.info("CommandItems is starting!");
 
         CommandSpec create = CommandSpec.builder()
                 .permission("commanditems.create")
-                .arguments(GenericArguments.optional(
-                        GenericArguments.string(Text.of("name"))
-                ))
+                .arguments(GenericArguments.optional(GenericArguments.string(Text.of("name"))))
                 .executor((sender, context) -> {
-                    getConfig().createItem(context.<String>getOne("name").orElse(null));
-                    itemsConfig.reload();
+                    String name = context.<String>getOne("name").orElse(null);
+                    this.itemManager.createItem(name);
+
                     sender.sendMessage(Text.of(TextColors.GREEN, "Successfully created new item!"));
                     return CommandResult.success();
                 }).build();
@@ -82,46 +92,54 @@ public class CommandItems {
         CommandSpec give = CommandSpec.builder()
                 .permission("commanditems.give")
                 .arguments(
-                        GenericArguments.string(Text.of("name")),
-                        GenericArguments.integer(Text.of("amount")),
-                        GenericArguments.optional(GenericArguments.player(Text.of("player"))))
+                        GenericArguments.flags().flag("d", "-drop").buildWith(
+                                GenericArguments.seq(
+                                        GenericArguments.string(Text.of("name")),
+                                        GenericArguments.integer(Text.of("amount")),
+                                        GenericArguments.playerOrSource(Text.of("player"))
+                                )
+                        )
+                )
                 .executor((sender, context) -> {
-                    Player player = null;
-                    if (context.<Player>getOne("player").isPresent()) {
-                        player = context.<Player>getOne("player").get();
-                    } else if (sender instanceof Player) {
-                        player = (Player) sender;
-                    } else {
-                        throw new CommandException(Text.of("You must specifiy a player when running this command from console!"));
-                    }
-                    String uuid = context.<String>getOne("name").get();
-                    CommandItem item = getConfig().getItemFor(uuid);
-                    if (item != null) {
-                        ItemStack stack = item.type.getTemplate().createStack();
-                        stack.offer(Keys.DISPLAY_NAME, toText(item.name));
-                        stack.offer(Keys.ITEM_LORE, item.lore.stream().map(CommandItems::toText).collect(Collectors.toList()));
-                        stack = ItemStack.builder().fromContainer(stack.toContainer().set(DataQuery.of("UnsafeData", "CommandItem"), uuid)).build();
+                    Player player = context.requireOne("player");
+                    String name = context.requireOne("name");
+                    int amount = context.requireOne("amount");
 
-                        stack.setQuantity(context.<Integer>getOne("amount").get());
-                        player.getInventory().offer(stack);
-                        player.sendMessage(toText(getMessages().YOU_GOT_A_ITEM.replace("%item%", TextSerializers.FORMATTING_CODE.serialize(toText(item.name)))));
+                    CommandItem item = this.itemManager.getItem(name);
+                    if (item == null)
+                        throw new CommandException(Text.of("Unknown CommandItem!"));
+
+                    ItemStack stack = ItemStack.builder()
+                            .itemType(item.type)
+                            .quantity(amount)
+                            .add(Keys.DISPLAY_NAME, toText(item.displayName))
+                            .add(Keys.ITEM_LORE, item.lore.stream().map(CommandItems::toText).collect(Collectors.toList()))
+                            .itemData(new CommandItemData(name))
+                            .build();
+
+                    InventoryTransactionResult result = player.getInventory().offer(stack);
+                    if (context.hasAny("d") && result.getType() != InventoryTransactionResult.Type.SUCCESS) {
+                        result.getRejectedItems().forEach(i -> {
+                            Entity entity = player.getWorld().createEntity(EntityTypes.ITEM, player.getPosition());
+                            entity.offer(Keys.REPRESENTED_ITEM, i);
+                            player.getWorld().spawnEntity(entity);
+                        });
                     }
+
+                    player.sendMessage(toText(this.config.get().messages.YOU_GOT_A_ITEM.replace("%item%", TextSerializers.FORMATTING_CODE.serialize(toText(item.displayName)))));
+
                     return CommandResult.success();
-                }).build();
+                })
+                .build();
 
         CommandSpec cmd = CommandSpec.builder()
                 .permission("commanditems.main")
                 .executor((sender, context) -> {
-                    sender.sendMessage(Text.of(
-                            Text.NEW_LINE,
+                    sender.sendMessage(Text.of(Text.NEW_LINE,
                             TextColors.GREEN, "    /citems give <name> [player]",
-                            TextColors.GRAY, " > ",
-                            TextColors.GRAY, "Gives yourself (or [player]) the item associated to this UUID, from the config",
-                            Text.NEW_LINE,
+                            TextColors.GRAY, " > Gives yourself (or [player]) the item associated to this UUID, from the config", Text.NEW_LINE,
                             TextColors.GREEN, "    /citems create [name]",
-                            TextColors.GRAY, " > ",
-                            TextColors.GRAY, "Creates a new default item on the config with the specified name (so you can edit it)",
-                            Text.NEW_LINE
+                            TextColors.GRAY, " > Creates a new default item on the config with the specified name (so you can edit it)", Text.NEW_LINE
                     ));
                     return CommandResult.success();
                 })
@@ -130,33 +148,58 @@ public class CommandItems {
                 .build();
 
         Sponge.getCommandManager().register(this, cmd, "commanditems", "citems", "ci");
-
-        Sponge.getEventManager().registerListeners(this, new CIListener());
     }
 
     @Listener
     public void onReload(GameReloadEvent e) {
-        this.itemsConfig.load();
+        this.config.reload();
     }
 
-    public static ItemsConfig getConfig() {
-        return instance.itemsConfig.getConfig();
+    @Listener
+    public void onPreInit(GamePreInitializationEvent event) {
+        KEY = Key.builder()
+                .type(TypeTokens.STRING_VALUE_TOKEN)
+                .query(DataQuery.of("commanditem"))
+                .id("commanditem")
+                .name("CommandItems Command")
+                .build();
     }
 
-    public static CooldownStorage getCooldowns() {
-        return instance.cooldowns.getConfig();
+    @Listener
+    public void registerKeys(GameRegistryEvent.Register<Key<?>> event) {
+        event.register(KEY);
+    }
+
+    @Listener
+    public void onRegister(GameRegistryEvent.Register<DataRegistration<?, ?>> event) {
+        DataRegistration.builder()
+                .dataClass(CommandItemData.class)
+                .immutableClass(CommandItemData.Immutable.class)
+                .builder(new CommandItemData.Builder())
+                .id("commanditem_data")
+                .name("CommandItems Command")
+                .build();
+    }
+
+    @Listener
+    public void onItemInteract(InteractItemEvent e, @Root Player p) {
+        e.getItemStack().get(CommandItems.KEY).ifPresent(name -> {
+            CommandItem item = config.get().items.get(name);
+            if (item != null) {
+                if (item.cancelOriginalAction)
+                    e.setCancelled(true);
+
+                boolean success = this.itemManager.useItem(item, name, p, e instanceof InteractItemEvent.Secondary);
+                if (success && item.consume)
+                    p.getInventory()
+                        .query(QueryOperationTypes.ITEM_STACK_IGNORE_QUANTITY.of(e.getItemStack().createStack()))
+                        .poll(1);
+            }
+        });
     }
 
     public static Text toText(String s) {
         return TextSerializers.FORMATTING_CODE.deserialize(s);
-    }
-
-    public static CommandItems getInstance() {
-        return instance;
-    }
-
-    public static MessagesConfig getMessages() {
-        return instance.messages.getConfig();
     }
 
 }
