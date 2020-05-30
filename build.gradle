@@ -7,9 +7,12 @@ group = pluginGroup
 version = pluginVersion
 
 dependencies {
-    compile 'org.spongepowered:spongeapi:7.2.0-SNAPSHOT'
-    shadow ('com.j256.ormlite:ormlite-jdbc:4.48') { transitive = false }
-    shadow ('com.j256.ormlite:ormlite-core:4.48') { transitive = false }
+    compileOnly 'org.spongepowered:spongeapi:7.2.0-SNAPSHOT'
+    shadow 'com.github.Eufranio:StorageUtils:2.3'
+}
+
+repositories {
+    maven { url = 'https://jitpack.io' }
 }
 
 sponge.plugin.id = pluginId

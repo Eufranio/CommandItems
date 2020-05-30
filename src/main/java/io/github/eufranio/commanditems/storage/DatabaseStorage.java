@@ -3,6 +3,7 @@ package io.github.eufranio.commanditems.storage;
 import io.github.eufranio.commanditems.CommandItems;
 import io.github.eufranio.commanditems.api.Storage;
 import io.github.eufranio.commanditems.storage.impl.CooldownData;
+import io.github.eufranio.storage.Persistable;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -14,6 +15,7 @@ public class DatabaseStorage implements Storage {
     @Override
     public void init(CommandItems plugin) {
         this.cooldowns = Persistable.create(CooldownData.class, plugin.config.get().databaseUrl);
+        this.cooldowns.idFieldName = "uuid";
     }
 
     @Override

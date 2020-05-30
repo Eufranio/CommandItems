@@ -3,8 +3,8 @@ package io.github.eufranio.commanditems.storage;
 import com.google.common.collect.Lists;
 import io.github.eufranio.commanditems.CommandItems;
 import io.github.eufranio.commanditems.api.Storage;
-import io.github.eufranio.commanditems.config.Config;
 import io.github.eufranio.commanditems.storage.impl.FileStorageConfig;
+import io.github.eufranio.config.Config;
 
 import java.time.Instant;
 import java.util.UUID;
