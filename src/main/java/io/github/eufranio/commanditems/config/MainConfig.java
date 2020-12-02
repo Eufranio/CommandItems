@@ -1,12 +1,10 @@
 package io.github.eufranio.commanditems.config;
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import ninja.leaping.configurate.objectmapping.Setting;
 import ninja.leaping.configurate.objectmapping.serialize.ConfigSerializable;
 
+import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 @ConfigSerializable
 public class MainConfig {
@@ -19,7 +17,9 @@ public class MainConfig {
     public String databaseUrl = "jdbc:sqlite:CommandItemsCooldowns.db";
 
     @Setting
-    public Map<String, CommandItem> items = ImmutableMap.of("default", new CommandItem());
+    public Map<String, CommandItem> items = new HashMap<String, CommandItem>() {{
+        put("default", new CommandItem());
+    }};
 
     @Setting
     public Messages messages = new Messages();
