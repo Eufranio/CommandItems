@@ -50,11 +50,11 @@ public class ItemManager {
             return false;
         }
 
-        for (int i = 0; i < item.commands.size(); i++) {
-            String[] cmd = item.commands.get(i + 1).split(";");
+        item.commands.forEach(command -> {
+            String[] cmd = command.split(";");
             CommandSource src = cmd[1].equals("console") ? Sponge.getServer().getConsole() : player;
             Sponge.getCommandManager().process(src, cmd[0].replace("%player%", player.getName()));
-        }
+        });
 
         player.sendMessage(CommandItems.toText(
                 plugin.config.get().messages.ITEM_USED.replace("%item%",

@@ -1,6 +1,5 @@
 package io.github.eufranio.commanditems.config;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import ninja.leaping.configurate.objectmapping.Setting;
 import ninja.leaping.configurate.objectmapping.serialize.ConfigSerializable;
@@ -8,7 +7,6 @@ import org.spongepowered.api.item.ItemType;
 import org.spongepowered.api.item.ItemTypes;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Created by Frani on 23/01/2018.
@@ -29,7 +27,7 @@ public class CommandItem {
     );
 
     @Setting
-    public Map<Integer, String> commands = ImmutableMap.of(1, "give %player% stone 1;console");
+    public List<String> commands = Lists.newArrayList("give %player% stone 1;console");
 
     @Setting
     public String permission = "commanditem.spetacularstone";
